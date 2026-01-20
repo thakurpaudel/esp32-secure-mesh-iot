@@ -1,0 +1,26 @@
+# Build artifacts
+build/
+sdkconfig.old
+sdkconfig.*
+*.bin
+*.elf
+*.map
+*.json  # except important ones like compile_commands.json if you want
+
+# ESP-IDF tools & submodules
+managed_components/
+dependencies.lock
+
+# Misc
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+.vscode/
+.ccls-cache/
+compile_commands.json  # Optional: keep if using clangd / VSCode IntelliSense
+
+# Python / model stuff
+__pycache__/
+*.pyc
+*.tflite  # Keep only if you want; usually large
