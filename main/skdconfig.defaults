@@ -1,0 +1,40 @@
+# Basic project settings
+CONFIG_IDF_TARGET="esp32"                   
+
+# WiFi country code (Nepal = NP, common for Kathmandu region)
+CONFIG_ESP_WIFI_COUNTRY_CODE="NP"
+CONFIG_ESP_WIFI_COUNTRY_POLICY="AUTO"    
+
+# Enable WiFi in general (needed for mesh)
+CONFIG_ESP_WIFI_ENABLED=y
+
+# WiFi mode - we'll use STA+AP for mesh (root connects to router, others in softAP)
+CONFIG_ESP_WIFI_STA_SUPPORT=y
+CONFIG_ESP_WIFI_AP_SUPPORT=y
+
+# Enable ESP-WIFI-MESH (critical for our project)
+CONFIG_ESP_WIFI_MESH_ENABLE=y
+
+# Mesh-specific useful defaults
+CONFIG_ESP_MESH_ENABLE=y
+CONFIG_ESP_MESH_SELF_ORGANIZED=y            
+CONFIG_ESP_MESH_LIGHT_SLEEP_ENABLE=n        
+
+# FreeRTOS – good defaults for multi-tasking (sensors + mesh + AI)
+CONFIG_FREERTOS_UNICORE=n                   
+CONFIG_FREERTOS_HZ=1000                    
+
+# Logging – keep informative but not too verbose
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3                  # INFO level
+
+# NVS – needed for WiFi credentials, mesh config persistence, etc.
+CONFIG_NVS_FLASH=y
+
+# LWIP – mesh uses IP layer
+CONFIG_LWIP_MAX_SOCKETS=10
+CONFIG_LWIP_TCP_KEEPALIVE=y
+
+# Heap – give mesh and AI some room
+CONFIG_ESP32_DEFAULT_CPU_FREQ_240=y         
+CONFIG_SPIRAM=y                             
