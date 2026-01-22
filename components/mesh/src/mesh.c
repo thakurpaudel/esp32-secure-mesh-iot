@@ -7,6 +7,7 @@
 #include "esp_mesh.h"
 #include "esp_mesh_internal.h"
 #include "esp_wifi.h"
+#include "mesh_data_transfer.h"
 #include "mesh_light.h"
 #include <string.h>
 
@@ -22,6 +23,10 @@ static const uint8_t MESH_ID[6] = {0x77, 0x77, 0x77, 0x77, 0x77, 0x77};
 static mesh_addr_t mesh_parent_addr;
 static int mesh_layer = -1;
 static esp_netif_t *netif_sta = NULL;
+
+/* Node registry for application-level addressing */
+static mesh_registered_node_t node_registry[MESH_MAX_REGISTERED_NODES];
+static int node_registry_count = 0;
 
 /*******************************************************
  *                Function Declarations
@@ -319,5 +324,127 @@ esp_err_t mesh_init(void) {
   ESP_LOGI(MESH_TAG, "mesh starts successfully, heap:%" PRId32,
            esp_get_free_heap_size());
 
+  return ESP_OK;
+}
+
+/*******************************************************
+ *                Node Registry Functions
+ *******************************************************/
+
+esp_err_t mesh_register_node(uint8_t node_id, const mesh_addr_t *mac_addr,
+                             uint8_t node_type, const char *name) {
+  if (mac_addr == NULL || name == NULL) {
+    ESP_LOGE(MESH_TAG, "Invalid arguments for node registration");
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  // Check if node already exists
+  for (int i = 0; i < node_registry_count; i++) {
+    if (node_registry[i].node_id == node_id) {
+      // Update existing node
+      memcpy(&node_registry[i].mac_addr, mac_addr, sizeof(mesh_addr_t));
+      node_registry[i].node_type = node_type;
+      strncpy(node_registry[i].name, name, sizeof(node_registry[i].name) - 1);
+      node_registry[i].name[sizeof(node_registry[i].name) - 1] = '\0';
+      node_registry[i].is_active = true;
+      node_registry[i].last_seen = esp_log_timestamp();
+      ESP_LOGI(MESH_TAG, "Updated node ID %d: %s", node_id, name);
+      return ESP_OK;
+    }
+  }
+
+  // Add new node
+  if (node_registry_count >= MESH_MAX_REGISTERED_NODES) {
+    ESP_LOGE(MESH_TAG, "Node registry full");
+    return ESP_ERR_NO_MEM;
+  }
+
+  node_registry[node_registry_count].node_id = node_id;
+  memcpy(&node_registry[node_registry_count].mac_addr, mac_addr,
+         sizeof(mesh_addr_t));
+  node_registry[node_registry_count].node_type = node_type;
+  strncpy(node_registry[node_registry_count].name, name,
+          sizeof(node_registry[node_registry_count].name) - 1);
+  node_registry[node_registry_count]
+      .name[sizeof(node_registry[node_registry_count].name) - 1] = '\0';
+  node_registry[node_registry_count].is_active = true;
+  node_registry[node_registry_count].last_seen = esp_log_timestamp();
+  node_registry_count++;
+
+  ESP_LOGI(MESH_TAG, "Registered node ID %d: %s", node_id, name);
+  return ESP_OK;
+}
+
+esp_err_t mesh_announce_node_identity(uint8_t node_id, uint8_t node_type,
+                                      const char *name) {
+  if (name == NULL) {
+    ESP_LOGE(MESH_TAG, "Invalid name for node identity");
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  if (esp_mesh_is_root()) {
+    ESP_LOGW(MESH_TAG, "Root node doesn't need to announce identity");
+    return ESP_OK;
+  }
+
+  mesh_node_identity_t identity;
+  identity.node_id = node_id;
+  identity.node_type = node_type;
+  strncpy(identity.name, name, sizeof(identity.name) - 1);
+  identity.name[sizeof(identity.name) - 1] = '\0';
+
+  ESP_LOGI(MESH_TAG, "Announcing identity: ID=%d, Type=%d, Name=%s", node_id,
+           node_type, name);
+
+  return mesh_send_to_root(MESH_DATA_TYPE_CONFIG, (uint8_t *)&identity,
+                           sizeof(identity));
+}
+
+esp_err_t mesh_send_to_node_id(uint8_t node_id, uint8_t data_type,
+                               const uint8_t *payload, uint16_t length) {
+  if (payload == NULL || length == 0) {
+    ESP_LOGE(MESH_TAG, "Invalid arguments");
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  if (!esp_mesh_is_root()) {
+    ESP_LOGE(MESH_TAG, "Only root can send to node ID");
+    return ESP_FAIL;
+  }
+
+  // Find node in registry
+  for (int i = 0; i < node_registry_count; i++) {
+    if (node_registry[i].node_id == node_id && node_registry[i].is_active) {
+      esp_err_t err = mesh_send_to_child(&node_registry[i].mac_addr, data_type,
+                                         payload, length);
+      if (err == ESP_OK) {
+        ESP_LOGI(MESH_TAG, "Sent to node ID %d (%s)", node_id,
+                 node_registry[i].name);
+        node_registry[i].last_seen = esp_log_timestamp();
+      }
+      return err;
+    }
+  }
+
+  ESP_LOGW(MESH_TAG, "Node ID %d not found in registry", node_id);
+  return ESP_ERR_NOT_FOUND;
+}
+
+int mesh_get_registered_node_count(void) { return node_registry_count; }
+
+esp_err_t mesh_get_registered_node_info(int index,
+                                        mesh_registered_node_t *node_info) {
+  if (index < 0 || index >= node_registry_count || node_info == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  memcpy(node_info, &node_registry[index], sizeof(mesh_registered_node_t));
+  return ESP_OK;
+}
+
+esp_err_t mesh_clear_node_registry(void) {
+  memset(node_registry, 0, sizeof(node_registry));
+  node_registry_count = 0;
+  ESP_LOGI(MESH_TAG, "Node registry cleared");
   return ESP_OK;
 }
